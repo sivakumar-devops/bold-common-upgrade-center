@@ -1,0 +1,30 @@
+@model ErrorViewModel
+@{
+    ViewData["Title"] = "Error";
+}
+
+<div class="unauth-wrap">
+    <div class="card unauth-card" role="alert">
+        <div class="unauth-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="9" stroke="#C92A2A" stroke-width="2" />
+                <path d="M12 7v6" stroke="#C92A2A" stroke-width="2" stroke-linecap="round" />
+                <path d="M12 16.5v.5" stroke="#C92A2A" stroke-width="2" stroke-linecap="round" />
+            </svg>
+        </div>
+
+        <h1>Something went wrong</h1>
+        <p>
+            The Upgrade Center could not complete the request. Try again, or contact your administrator if the problem continues.
+        </p>
+
+        @if (Model.ShowRequestId)
+        {
+            <p class="error-request-id">
+                Request ID: <code>@Model.RequestId</code>
+            </p>
+        }
+
+        <a class="btn btn-primary" href="@Url.Action("Index", "UpgradeCenter")">Back to Upgrade Center</a>
+    </div>
+</div>

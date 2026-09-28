@@ -1,0 +1,395 @@
+@using Bold.UpgradeCenter.Models
+@using Bold.UpgradeCenter.Models.ViewModels
+@model DashboardViewModel
+
+@{
+    ViewData["Title"] = $"{Model.SelectedProduct.DisplayName} Upgrade Center";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<!-- Top bar -->
+<partial name="_Topbar" model="@Model.CurrentUser" />
+
+<div class="wrap">
+
+    <!-- Page heading -->
+    <div class="top-row">
+        <div>
+            <div class="eyebrow">@Model.Installation.DeploymentTarget</div>
+            <h1 class="page-title">@Model.SelectedProduct.DisplayName Upgrade Center</h1>
+            <p class="page-sub">
+                Check for new releases, apply a delivered custom patch, and monitor every step
+                of the upgrade — with rollback if you need it.
+            </p>
+        </div>
+        @if (Model.AvailableProducts.Count > 1)
+        {
+            <nav class="product-switcher" aria-label="Upgrade product">
+                @foreach (var product in Model.AvailableProducts)
+                {
+                    var selected = string.Equals(product.Key, Model.SelectedProduct.Key, StringComparison.OrdinalIgnoreCase);
+                    <a class="product-switcher-link @(selected ? "active" : "")"
+                       href="@Url.Action("Index", "UpgradeCenter", new { product = product.Key })"
+                       aria-current="@(selected ? "page" : null)">
+                        @product.DisplayName
+                    </a>
+                }
+            </nav>
+        }
+    </div>
+
+    <!-- Error / notification banner (from TempData) -->
+    @if (ViewData["ErrorMessage"] is string errMsg)
+    {
+        var errorTitle = ViewData["ErrorTitle"] as string ?? "Action blocked";
+        <div class="banner running" style="background: var(--red-100, #fdecec); border-color: var(--red-300, #f3b9b9);">
+            <div class="txt">
+                <b>@errorTitle</b>
+                <span>@errMsg</span>
+            </div>
+        </div>
+    }
+
+    <!-- In-progress job banner -->
+    @if (Model.ActiveJob != null)
+    {
+        var isRollback = Model.ActiveJob.IsRollback;
+        var label      = isRollback
+            ? $"Rollback to {Model.ActiveJob.ToVersion} is in progress"
+            : $"Upgrade to {Model.ActiveJob.ToVersion} is in progress";
+        var who = Model.ActiveJob.InitiatedBy;
+        var stage = Model.ActiveJob.CurrentStage?.Name ?? "preparing";
+        <div class="banner running">
+            <div class="txt">
+                <b>@label</b>
+                <span>Initiated by @who — currently: @stage. No new upgrade or rollback can be started until this finishes.</span>
+            </div>
+            <a href="@Url.Action("Monitor", "UpgradeCenter", new { jobId = Model.ActiveJob.JobId })"
+               class="btn btn-secondary">View monitoring →</a>
+        </div>
+    }
+
+    <!-- Version cards -->
+    <div class="version-grid">
+        <div class="card vcard installed">
+            <div class="lbl">Currently installed</div>
+            <div class="num">v@(Model.Installation.InstalledVersion)</div>
+        </div>
+        <div class="card vcard latest">
+            <div class="lbl">Latest available</div>
+            <div class="num">v@(Model.Installation.LatestAvailableVersion)</div>
+            <div class="meta">@Model.Installation.NewerVersionCount newer version(s) available below</div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab active" data-tab="t-releases">Available releases</button>
+        <button class="tab"        data-tab="t-patch">Custom patch</button>
+        <button class="tab"        data-tab="t-history">History</button>
+    </div>
+
+    <!-- ── Tab: Available releases ────────────────────────────── -->
+    <div class="tabpanel active" id="t-releases">
+        @if (Model.AvailableReleases.Count == 0)
+        {
+            <div class="card card-pad empty-state">
+                <h2>You are already using the latest version.</h2>
+                <p>No newer versions are available.</p>
+            </div>
+        }
+        else
+        {
+            <div class="card">
+                <table class="release-table">
+                    <thead>
+                        <tr>
+                            <th>Version</th>
+                            <th>Released</th>
+                            <th>Release notes</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var release in Model.AvailableReleases)
+                        {
+                            <tr class="@(release.IsRecommendedNext ? "recommended" : "")">
+                                <td>
+                                    <div class="ver-cell">
+                                        <span class="v">v@(release.Version)</span>
+                                        @if (release.IsRecommendedNext)
+                                        {
+                                            <span class="badge badge-blue">Recommended next</span>
+                                        }
+                                        @if (release.RequiresIntermediateUpgrade)
+                                        {
+                                            <span class="badge badge-grey">@release.UpgradePathNote</span>
+                                        }
+                                    </div>
+                                    @if (release.IsRecommendedNext)
+                                    {
+                                        <div class="path-note">Direct upgrade from your current version</div>
+                                    }
+                                    @if (release.RequiresIntermediateUpgrade && !string.IsNullOrWhiteSpace(release.UpgradePathNote))
+                                    {
+                                        <div class="path-note">Not a direct upgrade path from v@(Model.Installation.InstalledVersion)</div>
+                                    }
+                                </td>
+                                <td>@release.ReleasedOn.ToString("dd MMM yyyy")</td>
+                                <td>
+                                    @if (!string.IsNullOrWhiteSpace(release.ReleaseNotesUrl))
+                                    {
+                                        <a class="notes-link" href="@release.ReleaseNotesUrl" target="_blank" rel="noopener">Release notes ↗</a>
+                                    }
+                                </td>
+                                <td>
+                                    @if (release.RequiresIntermediateUpgrade)
+                                    {
+                                        <button class="btn btn-secondary" disabled
+                                                title="@release.UpgradePathNote">
+                                            Upgrade
+                                        </button>
+                                    }
+                                    else if (Model.HasActiveJob)
+                                    {
+                                        <button class="btn btn-secondary" disabled
+                                                title="Another upgrade or rollback is currently in progress.">
+                                            Upgrade
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <a class="btn btn-primary"
+                                           href="@Url.Action("Confirm", "UpgradeCenter", new { version = release.Version, product = Model.SelectedProduct.Key })">
+                                            Upgrade
+                                        </a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <!-- ── Tab: Custom patch ──────────────────────────────────── -->
+    <div class="tabpanel" id="t-patch">
+        <div class="card card-pad patch-form">
+            <form id="patch-form"
+                  method="post"
+                  asp-controller="UpgradeCenter"
+                  asp-action="StartUpgrade">
+                @Html.AntiForgeryToken()
+                <div class="field">
+                    <label for="patchVersion">Custom patch version</label>
+                    <input type="text"
+                           id="patchVersion"
+                           name="patchVersion"
+                           placeholder="16.1.88" />
+                    <div class="hint">
+                        Enter the patch version or image tag provided by @Model.SelectedProduct.DisplayName Support.
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="imageRepository">Image repository <span style="color:var(--ink-500); font-weight:500;">(optional)</span></label>
+                    <input type="text"
+                           id="imageRepository"
+                           name="imageRepository"
+                           placeholder="registry.example.com/@Model.SelectedProduct.Key" />
+                    <div class="hint" id="imageRepositoryHint">
+                        Leave empty to keep the repository and image name from each currently running @Model.SelectedProduct.DisplayName deployment.
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-secondary" id="btn-validate" style="margin-right: 10px;"
+                        @if (Model.HasActiveJob) { <text>disabled title="Another upgrade or rollback is currently in progress."</text> }>
+                    Validate
+                </button>
+                <button type="submit" class="btn btn-primary" id="btn-patch-upgrade" disabled
+                        @if (Model.HasActiveJob) { <text>title="Another upgrade or rollback is currently in progress."</text> }>
+                    Upgrade to this patch
+                </button>
+                <input type="hidden" name="product" value="@Model.SelectedProduct.Key" />
+
+                @if (Model.HasActiveJob)
+                {
+                    <div class="allow-box" style="background: var(--amber-100, #fff4d6); border-color: var(--amber-300, #f5d28a);">
+                        ⚠ An upgrade or rollback is currently in progress. You can prepare the image
+                        version but the upgrade button is disabled until the active job finishes.
+                    </div>
+                }
+
+                <div id="patch-validation-result"></div>
+
+                <div class="allow-box">
+                    The Upgrade Center generates one target image per @Model.SelectedProduct.DisplayName deployment, validates
+                    every required image, and enables upgrade only when all required images are available.
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ── Tab: History ──────────────────────────────────────── -->
+    <div class="tabpanel" id="t-history">
+        <div class="card card-pad">
+            @if (!Model.History.Any())
+            {
+                <p style="color:var(--ink-500); font-size:13.5px;">No upgrade history yet.</p>
+            }
+            else
+            {
+                @foreach (var entry in Model.History)
+                {
+                    var statusBadge = entry.Status switch
+                    {
+                        UpgradeJobStatus.Completed  => ("badge-teal",  "Completed"),
+                        UpgradeJobStatus.RolledBack => ("badge-grey",  "Rolled back"),
+                        UpgradeJobStatus.Failed     => ("badge-red",   "Failed"),
+                        UpgradeJobStatus.Cancelled  => ("badge-grey",  "Cancelled"),
+                        UpgradeJobStatus.Cancelling => ("badge-amber", "Cancelling"),
+                        _                           => ("badge-grey",  entry.Status.ToString())
+                    };
+
+                    var isLatestRollbackable = Model.RollbackableJob != null
+                                               && Model.RollbackableJob.JobId == entry.JobId;
+
+                    <div class="history-row">
+                        <div>
+                            <b>@entry.Label</b>
+                            <div class="who">
+                                @(entry.IsAutomaticRollback
+                                    ? $"{statusBadge.Item2} · automatic rollback"
+                                    : $"{statusBadge.Item2} · initiated by {entry.InitiatedBy}")
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <span class="badge @statusBadge.Item1">@statusBadge.Item2</span>
+                            @if (entry.HasJobContext)
+                            {
+                                <a class="@(isLatestRollbackable ? "btn btn-secondary" : "btn btn-ghost")"
+                                   style="font-size:12px; padding:5px 10px;"
+                                   href="@Url.Action("Monitor", "UpgradeCenter", new { jobId = entry.JobId })">
+                                    Open
+                                </a>
+                            }
+
+                            @if (isLatestRollbackable)
+                            {
+                                @if (Model.HasActiveJob)
+                                {
+                                    <button type="button"
+                                            class="btn btn-secondary"
+                                            style="font-size:12px; padding:5px 10px;"
+                                            disabled
+                                            title="Another upgrade or rollback is currently in progress.">
+                                        Roll back
+                                    </button>
+                                }
+                                else
+                                {
+                                    <a class="btn btn-secondary"
+                                       style="font-size:12px; padding:5px 10px;"
+                                       href="@Url.Action("ConfirmRollback", "UpgradeCenter", new { jobId = entry.JobId })"
+                                       title="Roll back to the previous version">
+                                        Roll back
+                                    </a>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="allow-box" style="margin-top:14px;">
+                    ℹ️ Rollback is only available for the <b>most recent successful upgrade</b>
+                    (within 7 days). Older versions cannot be rolled back directly — apply the
+                    most recent upgrade first, then roll it back.
+                </div>
+            }
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+    // ── Tab switching ──────────────────────────────────────────────
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tabpanel').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById(tab.dataset.tab).classList.add('active');
+        });
+    });
+
+    // ── Custom patch validation (AJAX) ────────────────────────────
+    const btnValidate      = document.getElementById('btn-validate');
+    const btnPatchUpgrade  = document.getElementById('btn-patch-upgrade');
+    const patchVersionInput = document.getElementById('patchVersion');
+    const imageRepoInput    = document.getElementById('imageRepository');
+    const imageRepoHint     = document.getElementById('imageRepositoryHint');
+    const validationResult = document.getElementById('patch-validation-result');
+
+    async function loadDefaultImageRepository() {
+        try {
+            const response = await fetch('@Url.Action("GetDefaultCustomPatchRepository", "UpgradeCenter", new { product = Model.SelectedProduct.Key })', {
+                headers: { 'Accept': 'application/json' },
+                cache: 'no-store'
+            });
+            if (!response.ok) return;
+
+            const result = await response.json();
+            const imageRepository = String(result.imageRepository || '').trim();
+            if (!imageRepository || imageRepoInput.value.trim()) return;
+
+            imageRepoInput.value = imageRepository;
+            imageRepoHint.textContent = 'Detected from the currently running @Model.SelectedProduct.DisplayName deployments. Change it only when the custom patch is hosted in a different allowed repository.';
+        } catch {
+            // Repository discovery is optional; an empty value preserves current repositories.
+        }
+    }
+
+    loadDefaultImageRepository();
+
+    btnValidate.addEventListener('click', async () => {
+        const patchVersion = patchVersionInput.value.trim();
+        const imageRepository = imageRepoInput.value.trim();
+        if (!patchVersion) return;
+
+        btnValidate.disabled = true;
+        btnValidate.textContent = 'Validating…';
+
+        const formData = new FormData();
+        formData.append('patchVersion', patchVersion);
+        formData.append('imageRepository', imageRepository);
+        formData.append('product', '@Model.SelectedProduct.Key');
+        formData.append('__RequestVerificationToken',
+            document.querySelector('input[name="__RequestVerificationToken"]').value);
+
+        try {
+            const resp = await fetch('@Url.Action("ValidatePatch", "UpgradeCenter")', {
+                method: 'POST',
+                body: formData
+            });
+
+            const html = await resp.text();
+            validationResult.innerHTML = html;
+
+            // Enable the upgrade button only when valid
+            const isValid = validationResult.querySelector('.validation-result.valid') !== null;
+            btnPatchUpgrade.disabled = !isValid;
+        } finally {
+            btnValidate.disabled = false;
+            btnValidate.textContent = 'Validate';
+        }
+    });
+
+    // Re-validate on input change
+    [patchVersionInput, imageRepoInput].forEach(input => input.addEventListener('input', () => {
+        validationResult.innerHTML = '';
+        btnPatchUpgrade.disabled = true;
+    }));
+</script>
+}

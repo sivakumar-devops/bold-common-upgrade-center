@@ -1,0 +1,207 @@
+@using Bold.UpgradeCenter.Models
+@using Bold.UpgradeCenter.Models.ViewModels
+@model ConfirmUpgradeViewModel
+
+@{
+    ViewData["Title"] = "Confirm Upgrade";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<partial name="_Topbar" model="@Model.CurrentUser" />
+
+<div class="modal-scrim">
+    <div class="modal-card"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="confirm-upgrade-title"
+         aria-describedby="confirm-upgrade-description"
+         tabindex="-1">
+        <h2 id="confirm-upgrade-title">Confirm upgrade</h2>
+        <p class="sub" id="confirm-upgrade-description">
+            Review the details below before starting.
+            You can monitor every step once the upgrade begins.
+        </p>
+
+        <div class="swap-row">
+            <div class="swap-item">
+                <div class="t">From</div>
+                <div class="v">v@(Model.FromVersion)</div>
+            </div>
+            <div class="swap-arrow">to</div>
+            <div class="swap-item">
+                <div class="t">To</div>
+                <div class="v">
+                    @if (Model.ReleaseType == ReleaseType.CustomPatch)
+                    {
+                        <span>@(Model.ToVersion) <span class="badge badge-grey" style="font-size:10px;">patch</span></span>
+                    }
+                    else
+                    {
+                        @($"v{Model.ToVersion}")
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (Model.ReleaseType == ReleaseType.Standard)
+        {
+            <div class="modal-note">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;margin-top:1px">
+                    <circle cx="8" cy="8" r="7" stroke="#2452B8" stroke-width="1.5"/>
+                    <path d="M8 5v4M8 11v.5" stroke="#2452B8" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <div>
+                    <strong>Database schema impact</strong>
+                    @if (!Model.SchemaImpactKnown)
+                    {
+                        <div>Unable to determine the complete database impact before confirmation. The backup stage will validate this again before making upgrade changes.</div>
+                    }
+                    else if (Model.HasSchemaChanges)
+                    {
+                        <div>
+                            @Model.AffectedTableCount affected table(s) identified
+                            @if (Model.DatabaseTypes.Count > 0)
+                            {
+                                <span> for @string.Join(", ", Model.DatabaseTypes)</span>
+                            }
+                            .
+                        </div>
+                    }
+                    else
+                    {
+                        <div>No database schema changes were reported for this upgrade range.</div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (Model.AffectedTableCount > 0)
+        {
+            <div class="affected-table-box">
+                <div class="affected-table-head">
+                    <strong>Affected tables</strong>
+                    <span>@Model.AffectedTableCount total</span>
+                </div>
+                <div class="affected-table-list">
+                    <ul>
+                        @foreach (var table in Model.AffectedTables)
+                        {
+                            <li>@table</li>
+                        }
+                    </ul>
+                </div>
+                @if (Model.AffectedTableCount > Model.AffectedTables.Count)
+                {
+                    <div class="affected-table-more">
+                        Showing @Model.AffectedTables.Count of @Model.AffectedTableCount table(s). The full set is used by the backend backup workflow.
+                    </div>
+                }
+            </div>
+        }
+
+        @if (Model.Warnings.Count > 0)
+        {
+            <div class="warning-list">
+                <strong>Before this starts</strong>
+                <ul>
+                    @foreach (var warning in Model.Warnings)
+                    {
+                        <li>@warning</li>
+                    }
+                </ul>
+            </div>
+        }
+
+        @if (Model.IsStartBlocked && !string.IsNullOrWhiteSpace(Model.StartBlockedMessage))
+        {
+            <div class="upgrade-blocker" role="alert">
+                <span class="upgrade-blocker-icon">!</span>
+                <div>
+                    <strong>Upgrade unavailable</strong>
+                    <div>@Model.StartBlockedMessage</div>
+                </div>
+            </div>
+        }
+
+        @if (Model.ReleaseType == ReleaseType.CustomPatch && !string.IsNullOrWhiteSpace(Model.CustomImageReference))
+        {
+            <div class="modal-note" style="background:var(--amber-100);">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;margin-top:1px">
+                    <path d="M8 2L14 13H2L8 2Z" stroke="#B7791F" stroke-width="1.5" stroke-linejoin="round"/>
+                    <path d="M8 7v3M8 11.5v.5" stroke="#B7791F" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                Custom patch: <code style="font-family:var(--mono);font-size:11.5px;word-break:break-all">@Model.CustomImageReference</code>
+            </div>
+        }
+
+        <div class="modal-actions">
+            <a class="btn btn-secondary"
+               href="@Url.Action("Index", "UpgradeCenter", new { product = Model.SelectedProduct.Key })">
+                Cancel
+            </a>
+
+            <form method="post"
+                  asp-controller="UpgradeCenter"
+                  asp-action="StartUpgrade"
+                  style="display:inline">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="version" value="@Model.ToVersion" />
+                <input type="hidden" name="imageRef" value="@Model.CustomImageReference" />
+                <input type="hidden" name="product" value="@Model.SelectedProduct.Key" />
+                <button type="submit"
+                        class="btn btn-primary"
+                        disabled="@Model.IsStartBlocked">
+                    Start upgrade
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    (function () {
+        var dialog = document.querySelector('.modal-card[role="dialog"]');
+        if (!dialog) return;
+
+        var focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+        var cancelLink = dialog.querySelector('.modal-actions .btn-secondary');
+
+        function getFocusableItems() {
+            return Array.prototype.slice.call(dialog.querySelectorAll(focusableSelector))
+                .filter(function (element) { return element.offsetParent !== null; });
+        }
+
+        dialog.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && cancelLink) {
+                event.preventDefault();
+                window.location.href = cancelLink.href;
+                return;
+            }
+
+            if (event.key !== 'Tab') return;
+
+            var focusableItems = getFocusableItems();
+            if (focusableItems.length === 0) {
+                event.preventDefault();
+                dialog.focus();
+                return;
+            }
+
+            var first = focusableItems[0];
+            var last = focusableItems[focusableItems.length - 1];
+
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        });
+
+        var initialFocus = dialog.querySelector('.btn-primary') || getFocusableItems()[0] || dialog;
+        initialFocus.focus();
+    })();
+</script>
+}

@@ -1,0 +1,38 @@
+@using Bold.UpgradeCenter.Models
+@model UpgradeCenterUser
+
+@{
+    ViewData["Title"] = "Access Denied";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="product-topbar">
+    <div class="brand">
+        <img class="brand-logo" src="~/upgrade-center/images/boldid_main_logo.svg" asp-append-version="true" alt="Bold" />
+        <div class="name">Bold</div>
+        <div class="crumb">Upgrade Center</div>
+        <span class="beta-badge beta-badge-topbar" aria-label="Beta version">BETA</span>
+    </div>
+    <div class="user-chip">
+        <div class="avatar">@Model.Initials</div>
+        @Model.DisplayName · @Model.Role
+    </div>
+</div>
+
+<div class="unauth-wrap">
+    <div class="card unauth-card">
+        <div class="unauth-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M6 10V8a6 6 0 1112 0v2" stroke="#C0392B" stroke-width="1.8" stroke-linecap="round" />
+                <rect x="4" y="10" width="16" height="11" rx="2" stroke="#C0392B" stroke-width="1.8" />
+                <circle cx="12" cy="15.5" r="1.4" fill="#C0392B" />
+            </svg>
+        </div>
+        <h1>You don't have access to this page</h1>
+        <p>
+            The Upgrade Center is available to authorized administrators only.
+            If you believe you should have access, contact your UMS administrator.
+        </p>
+        <a href="@(ViewData["ReturnToBoldBiUrl"] as string ?? "/")" class="btn btn-primary">Return to application</a>
+    </div>
+</div>

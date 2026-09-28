@@ -1,0 +1,476 @@
+@using Bold.UpgradeCenter.Models
+@using Bold.UpgradeCenter.Models.ViewModels
+@model MonitoringViewModel
+
+@{
+    ViewData["Title"] = $"Monitoring - v{Model.Job.FromVersion} -> v{Model.Job.ToVersion}";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+
+    var isLive = Model.Job.Status is UpgradeJobStatus.Running or UpgradeJobStatus.Cancelling or UpgradeJobStatus.RollingBack;
+}
+
+<partial name="_Topbar" model="@Model.CurrentUser" />
+
+<div class="wrap">
+    <div id="monitoring-body">
+        <partial name="_MonitoringContent" model="@Model" />
+    </div>
+
+    <div class="monitor-actions">
+        <a href="@Url.Action("Index", "UpgradeCenter")" class="btn btn-ghost">&larr; Back to Upgrade Center</a>
+        @if (Model.CanCancelUpgrade)
+        {
+            <form id="cancel-upgrade-form"
+                  method="post"
+                  action="@Url.Action("CancelUpgrade", "UpgradeCenter", new { jobId = Model.Job.JobId })">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-danger" id="cancel-upgrade-button">
+                    Cancel Upgrade
+                </button>
+            </form>
+        }
+    </div>
+</div>
+
+@if (Model.CanCancelUpgrade)
+{
+    <div class="modal-scrim cancel-dialog" id="cancel-upgrade-dialog" hidden>
+        <div class="modal-card cancel-dialog-card"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="cancel-upgrade-title"
+             aria-describedby="cancel-upgrade-description"
+             tabindex="-1">
+            <h2 id="cancel-upgrade-title">Cancel upgrade?</h2>
+            <p class="sub" id="cancel-upgrade-description">
+                If deployment images have already changed, the Upgrade Center will start the existing rollback workflow where rollback context is available.
+            </p>
+            <div class="warning-list">
+                <strong>Before cancelling</strong>
+                <ul>
+                    <li>The current running operation will be asked to stop safely.</li>
+                    <li>If rollback context is available and deployment changes were already applied, rollback may be initiated automatically.</li>
+                    <li>The operation status will continue to update on this monitoring page.</li>
+                </ul>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" id="cancel-upgrade-dialog-close">Proceed with Upgrade</button>
+                <button type="button" class="btn btn-danger" id="cancel-upgrade-dialog-confirm">Cancel upgrade</button>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+    (function () {
+        var jobId = '@Model.Job.JobId';
+        var pollUrl = '@Url.Action("MonitorStatus", "UpgradeCenter", new { jobId = "__JID__" })'.replace('__JID__', jobId);
+        var logUrl = '@Url.Action("MonitorLogs", "UpgradeCenter", new { jobId = "__JID__" })'.replace('__JID__', jobId);
+        var body = document.getElementById('monitoring-body');
+        var stopped = @((isLive ? "false" : "true"));
+        var logsStopped = @((isLive ? "false" : "true"));
+        var lastLogSequence = readLastLogSequence();
+        var detailsStorageKey = 'upgrade-center:monitor-details:' + jobId;
+        var detailsState = readDetailsState();
+        var completeLogAutoScroll = true;
+        var completeLogScrollThreshold = 24;
+        var cancelForm = document.getElementById('cancel-upgrade-form');
+        var cancelButton = document.getElementById('cancel-upgrade-button');
+        var cancelDialog = document.getElementById('cancel-upgrade-dialog');
+        var cancelDialogCard = cancelDialog ? cancelDialog.querySelector('.modal-card') : null;
+        var cancelDialogClose = document.getElementById('cancel-upgrade-dialog-close');
+        var cancelDialogConfirm = document.getElementById('cancel-upgrade-dialog-confirm');
+        var cancelDialogPreviousFocus = null;
+        var cancelEligibilityCheckInProgress = false;
+
+        function readDetailsState() {
+            try {
+                return JSON.parse(sessionStorage.getItem(detailsStorageKey) || '{}');
+            } catch (_) {
+                return {};
+            }
+        }
+
+        function saveDetailsState() {
+            try {
+                sessionStorage.setItem(detailsStorageKey, JSON.stringify(detailsState));
+            } catch (_) {
+                // Ignore storage failures; the current DOM state is still usable.
+            }
+        }
+
+        function rememberDetailsState() {
+            if (!body) return;
+
+            body.querySelectorAll('details[data-details-key]').forEach(function (details) {
+                detailsState[details.dataset.detailsKey] = details.open;
+            });
+            saveDetailsState();
+        }
+
+        function restoreDetailsState() {
+            if (!body) return;
+
+            body.querySelectorAll('details[data-details-key]').forEach(function (details) {
+                var key = details.dataset.detailsKey;
+                if (Object.prototype.hasOwnProperty.call(detailsState, key)) {
+                    details.open = !!detailsState[key];
+                }
+            });
+        }
+
+        function readLastLogSequence() {
+            var logBox = document.getElementById('complete-log-box');
+            if (!logBox) return 0;
+
+            var value = parseInt(logBox.dataset.lastSequence || '0', 10);
+            return Number.isNaN(value) ? 0 : value;
+        }
+
+        function scrollCompleteLogToBottom() {
+            var logBox = document.getElementById('complete-log-box');
+            if (!logBox) return;
+
+            requestAnimationFrame(function () {
+                logBox.scrollTop = logBox.scrollHeight;
+            });
+        }
+
+        function isCompleteLogNearBottom(logBox) {
+            if (!logBox) return true;
+
+            return logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight <= completeLogScrollThreshold;
+        }
+
+        function rememberCompleteLogScrollMode() {
+            var logBox = document.getElementById('complete-log-box');
+            if (logBox) {
+                completeLogAutoScroll = isCompleteLogNearBottom(logBox);
+            }
+        }
+
+        function updateMonitoringBody(html) {
+            var template = document.createElement('template');
+            template.innerHTML = html.trim();
+
+            var existingCompleteLogCard = body.querySelector('.complete-log-card');
+            var incomingCompleteLogCard = template.content.querySelector('.complete-log-card');
+            if (existingCompleteLogCard && incomingCompleteLogCard) {
+                incomingCompleteLogCard.replaceWith(existingCompleteLogCard);
+            }
+
+            body.replaceChildren(template.content);
+        }
+
+        function attachCompleteLogScrollHandler() {
+            var logBox = document.getElementById('complete-log-box');
+            if (!logBox) return;
+            if (logBox.dataset.scrollHandlerAttached === 'true') return;
+
+            logBox.addEventListener('scroll', function () {
+                completeLogAutoScroll = isCompleteLogNearBottom(logBox);
+            });
+            logBox.dataset.scrollHandlerAttached = 'true';
+        }
+
+        function syncCancelButton() {
+            if (!cancelForm || !cancelButton || !body) return;
+
+            var header = body.querySelector('.job-header');
+            var canCancel = isCancelCurrentlyAvailable();
+            var status = header ? header.dataset.jobStatus || '' : '';
+
+            cancelForm.hidden = !canCancel;
+            cancelButton.disabled = !canCancel || status === 'Cancelling';
+            cancelButton.textContent = status === 'Cancelling' ? 'Cancelling...' : 'Cancel Upgrade';
+        }
+
+        function isCancelCurrentlyAvailable() {
+            if (!body) return false;
+
+            var header = body.querySelector('.job-header');
+            return !!header && header.dataset.canCancel === 'true';
+        }
+
+        function refreshMonitoringBody(html) {
+            updateMonitoringBody(html);
+            restoreDetailsState();
+            attachCompleteLogScrollHandler();
+            syncCancelButton();
+            lastLogSequence = readLastLogSequence();
+            if (detailsState['complete:' + jobId] && completeLogAutoScroll) {
+                scrollCompleteLogToBottom();
+            }
+        }
+
+        function checkCancelEligibilityThenOpenDialog() {
+            if (!cancelForm || !cancelButton || cancelEligibilityCheckInProgress) return;
+
+            cancelEligibilityCheckInProgress = true;
+            cancelButton.disabled = true;
+            cancelButton.textContent = 'Checking...';
+            rememberDetailsState();
+            rememberCompleteLogScrollMode();
+
+            fetch(pollUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function (r) { return r.text(); })
+                .then(function (html) {
+                    refreshMonitoringBody(html);
+                    if (isCancelCurrentlyAvailable()) {
+                        openCancelDialog();
+                    } else {
+                        closeCancelDialog();
+                    }
+                })
+                .catch(function () {
+                    if (isCancelCurrentlyAvailable()) {
+                        openCancelDialog();
+                    }
+                })
+                .finally(function () {
+                    cancelEligibilityCheckInProgress = false;
+                    syncCancelButton();
+                });
+        }
+
+        function getDialogFocusableItems() {
+            if (!cancelDialogCard) return [];
+
+            var focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+            return Array.prototype.slice.call(cancelDialogCard.querySelectorAll(focusableSelector))
+                .filter(function (element) { return element.offsetParent !== null; });
+        }
+
+        function openCancelDialog() {
+            if (!cancelDialog || !cancelDialogCard) return;
+
+            cancelDialogPreviousFocus = document.activeElement;
+            cancelDialog.hidden = false;
+            document.addEventListener('keydown', handleCancelDialogKeydown);
+
+            var focusTarget = cancelDialogClose || getDialogFocusableItems()[0] || cancelDialogCard;
+            focusTarget.focus();
+        }
+
+        function closeCancelDialog() {
+            if (!cancelDialog) return;
+
+            cancelDialog.hidden = true;
+            document.removeEventListener('keydown', handleCancelDialogKeydown);
+
+            if (cancelDialogPreviousFocus && typeof cancelDialogPreviousFocus.focus === 'function') {
+                cancelDialogPreviousFocus.focus();
+            }
+        }
+
+        function handleCancelDialogKeydown(event) {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeCancelDialog();
+                return;
+            }
+
+            if (event.key !== 'Tab' || !cancelDialogCard || cancelDialog.hidden) return;
+
+            var focusableItems = getDialogFocusableItems();
+            if (focusableItems.length === 0) {
+                event.preventDefault();
+                cancelDialogCard.focus();
+                return;
+            }
+
+            var first = focusableItems[0];
+            var last = focusableItems[focusableItems.length - 1];
+
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        }
+
+        function disableCancelControls() {
+            if (cancelButton) {
+                cancelButton.disabled = true;
+                cancelButton.textContent = 'Cancelling...';
+            }
+
+            if (cancelDialogConfirm) {
+                cancelDialogConfirm.disabled = true;
+                cancelDialogConfirm.textContent = 'Cancelling...';
+            }
+        }
+
+        function appendLogEntries(entries) {
+            var logBox = document.getElementById('complete-log-box');
+            if (!logBox || !Array.isArray(entries) || entries.length === 0) return;
+
+            var shouldFollowLatest = completeLogAutoScroll && isCompleteLogNearBottom(logBox);
+            entries.forEach(function (entry) {
+                logBox.appendChild(createCompleteLogLine(entry));
+                lastLogSequence = Math.max(lastLogSequence, Number(entry.sequence || 0));
+            });
+
+            logBox.dataset.lastSequence = String(lastLogSequence);
+            if (shouldFollowLatest) {
+                scrollCompleteLogToBottom();
+            }
+        }
+
+        function createCompleteLogLine(entry) {
+            var level = entry.level || 'Info';
+            var levelClass = String(level).toLowerCase() === 'error'
+                ? 'error'
+                : String(level).toLowerCase() === 'warning'
+                    ? 'warning'
+                    : 'info';
+            var line = document.createElement('div');
+            line.className = 'complete-log-line ' + levelClass;
+            line.dataset.sequence = String(entry.sequence || '');
+
+            var timestamp = document.createElement('span');
+            timestamp.className = 'log-timestamp';
+            timestamp.textContent = entry.timestamp || '';
+
+            var levelElement = document.createElement('span');
+            levelElement.className = 'log-level';
+            levelElement.textContent = level;
+
+            var stage = document.createElement('span');
+            stage.className = 'log-stage';
+            stage.textContent = entry.stage || 'Job';
+
+            var message = document.createElement('div');
+            message.className = 'complete-log-message';
+            message.textContent = entry.message || '';
+
+            line.appendChild(timestamp);
+            line.appendChild(createLogSeparator());
+            line.appendChild(levelElement);
+            line.appendChild(createLogSeparator());
+            line.appendChild(stage);
+            line.appendChild(createLogSeparator());
+            line.appendChild(message);
+            return line;
+        }
+
+        function createLogSeparator() {
+            var separator = document.createElement('span');
+            separator.className = 'log-separator';
+            separator.textContent = '|';
+            return separator;
+        }
+
+        document.addEventListener('toggle', function (event) {
+            var details = event.target;
+            if (!details || !details.matches || !details.matches('details[data-details-key]')) return;
+
+            detailsState[details.dataset.detailsKey] = details.open;
+            saveDetailsState();
+            if (details.open && details.dataset.detailsKey === 'complete:' + jobId) {
+                completeLogAutoScroll = true;
+                scrollCompleteLogToBottom();
+            }
+        }, true);
+
+        function poll() {
+            if (stopped || !body) return;
+            rememberDetailsState();
+            rememberCompleteLogScrollMode();
+
+            fetch(pollUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function (r) { return r.text(); })
+                .then(function (html) {
+                    refreshMonitoringBody(html);
+
+                    var terminalStatuses = ['Completed', 'Action required', 'Rolled back', 'Cancelled'];
+                    var jobBadge = body.querySelector('.job-header .badge');
+                    var badgeText = jobBadge && jobBadge.textContent;
+                    if (terminalStatuses.some(function (status) { return badgeText && badgeText.includes(status); })) {
+                        stopped = true;
+                    } else {
+                        setTimeout(poll, 5000);
+                    }
+                })
+                .catch(function () {
+                    setTimeout(poll, 8000);
+                });
+        }
+
+        function pollLogs() {
+            if (logsStopped) return;
+
+            fetch(logUrl + '?afterSequence=' + encodeURIComponent(lastLogSequence), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    appendLogEntries(data.entries);
+                    if (data.isTerminal) {
+                        logsStopped = true;
+                    } else {
+                        setTimeout(pollLogs, 2000);
+                    }
+                })
+                .catch(function () {
+                    setTimeout(pollLogs, 5000);
+                });
+        }
+
+        restoreDetailsState();
+        attachCompleteLogScrollHandler();
+        syncCancelButton();
+        if (detailsState['complete:' + jobId]) {
+            scrollCompleteLogToBottom();
+        }
+        if (cancelForm) {
+            cancelForm.addEventListener('submit', function (event) {
+                if (cancelForm.dataset.confirmed === 'true') {
+                    disableCancelControls();
+                    return;
+                }
+
+                event.preventDefault();
+                checkCancelEligibilityThenOpenDialog();
+            });
+        }
+        if (cancelDialogClose) {
+            cancelDialogClose.addEventListener('click', closeCancelDialog);
+        }
+        if (cancelDialog) {
+            cancelDialog.addEventListener('click', function (event) {
+                if (event.target === cancelDialog) {
+                    closeCancelDialog();
+                }
+            });
+        }
+        if (cancelDialogConfirm && cancelForm) {
+            cancelDialogConfirm.addEventListener('click', function () {
+                if (!isCancelCurrentlyAvailable()) {
+                    closeCancelDialog();
+                    syncCancelButton();
+                    return;
+                }
+
+                cancelForm.dataset.confirmed = 'true';
+                disableCancelControls();
+
+                if (typeof cancelForm.requestSubmit === 'function') {
+                    cancelForm.requestSubmit();
+                } else {
+                    cancelForm.submit();
+                }
+            });
+        }
+        if (!stopped) {
+            setTimeout(poll, 5000);
+        }
+        if (!logsStopped) {
+            setTimeout(pollLogs, 2000);
+        }
+    })();
+</script>
+}

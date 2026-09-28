@@ -1,0 +1,32 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"traefik.io/v1alpha1","kind":"IngressRoute","metadata":{"annotations":{},"name":"bold-upgrade-center-route-template","namespace":"bold-upgrade-center"},"spec":{"entryPoints":["websecure"],"routes":[{"kind":"Rule","match":"Host(`bold-upgrade-center.boldbidemo.com/`) \u0026\u0026 PathPrefix(`/upgrade-center`)","middlewares":[{"name":"body-limit-200m"},{"name":"bold-upgrade-center-trailing-slash"}],"priority":1000,"services":[{"name":"bold-upgrade-center","port":80,"serversTransport":"long-timeouts-transport","sticky":{"cookie":{"maxAge":600,"name":"bold.k8s.pod.id"}}}]}],"tls":{"secretName":"bold-tls"}}}
+  creationTimestamp: "2026-09-23T10:16:16Z"
+  generation: 1
+  name: bold-upgrade-center-route-template
+  namespace: bold-upgrade-center
+  resourceVersion: "1790158576401631001"
+  uid: d227aa76-cdc9-4a35-a82b-e37a9a8dd7c4
+spec:
+  entryPoints:
+  - websecure
+  routes:
+  - kind: Rule
+    match: Host(`bold-upgrade-center.boldbidemo.com/`) && PathPrefix(`/upgrade-center`)
+    middlewares:
+    - name: body-limit-200m
+    - name: bold-upgrade-center-trailing-slash
+    priority: 1000
+    services:
+    - name: bold-upgrade-center
+      port: 80
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  tls:
+    secretName: bold-tls

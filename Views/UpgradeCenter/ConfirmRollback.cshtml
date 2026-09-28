@@ -1,0 +1,146 @@
+@using Bold.UpgradeCenter.Models.ViewModels
+@model ConfirmRollbackViewModel
+
+@{
+    ViewData["Title"] = "Confirm Rollback";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<partial name="_Topbar" model="@Model.CurrentUser" />
+
+<div class="modal-scrim">
+    <div class="modal-card"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="confirm-rollback-title"
+         aria-describedby="confirm-rollback-description"
+         tabindex="-1">
+        <h2 id="confirm-rollback-title">Confirm rollback</h2>
+        <p class="sub" id="confirm-rollback-description">
+            Review the rollback details below before restoring the previous version.
+            You can monitor every step once rollback begins.
+        </p>
+
+        <div class="swap-row">
+            <div class="swap-item">
+                <div class="t">Rollback from</div>
+                <div class="v">v@(Model.RollbackFromVersion)</div>
+            </div>
+            <div class="swap-arrow">to</div>
+            <div class="swap-item">
+                <div class="t">Restore to</div>
+                <div class="v">v@(Model.RestoreToVersion)</div>
+            </div>
+        </div>
+
+        <div class="rollback-confirm-summary">
+            <div>
+                <span>Rollback point</span>
+                <strong>@Model.RollbackId</strong>
+            </div>
+            <div>
+                <span>Created</span>
+                <strong>@Model.RollbackPointCreatedAt.ToString("dd MMM yyyy, hh:mm:ss tt")</strong>
+            </div>
+            <div>
+                <span>Database backups</span>
+                <strong>@Model.BackupDatabaseCount</strong>
+            </div>
+            <div>
+                <span>Kubernetes images</span>
+                <strong>@Model.KubernetesImageCount</strong>
+            </div>
+        </div>
+
+        <div class="modal-note">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;margin-top:1px">
+                <circle cx="8" cy="8" r="7" stroke="#0565FF" stroke-width="1.5"/>
+                <path d="M8 5v4M8 11v.5" stroke="#0565FF" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <div>
+                <strong>Rollback impact</strong>
+                <div>
+                    The Upgrade Center will restore the recorded database backups and revert the
+                    recorded Kubernetes deployment image tags for this rollback point.
+                </div>
+            </div>
+        </div>
+
+        @if (Model.Warnings.Count > 0)
+        {
+            <div class="warning-list">
+                <strong>Before rollback starts</strong>
+                <ul>
+                    @foreach (var warning in Model.Warnings)
+                    {
+                        <li>@warning</li>
+                    }
+                </ul>
+            </div>
+        }
+
+        <div class="modal-actions">
+            <a class="btn btn-secondary"
+               href="@Url.Action("Monitor", "UpgradeCenter", new { jobId = Model.JobId })">
+                Cancel
+            </a>
+
+            <form method="post"
+                  asp-controller="UpgradeCenter"
+                  asp-action="Rollback"
+                  asp-route-jobId="@Model.JobId"
+                  style="display:inline">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-danger">Start rollback</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    (function () {
+        var dialog = document.querySelector('.modal-card[role="dialog"]');
+        if (!dialog) return;
+
+        var focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+        var cancelLink = dialog.querySelector('.modal-actions .btn-secondary');
+
+        function getFocusableItems() {
+            return Array.prototype.slice.call(dialog.querySelectorAll(focusableSelector))
+                .filter(function (element) { return element.offsetParent !== null; });
+        }
+
+        dialog.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && cancelLink) {
+                event.preventDefault();
+                window.location.href = cancelLink.href;
+                return;
+            }
+
+            if (event.key !== 'Tab') return;
+
+            var focusableItems = getFocusableItems();
+            if (focusableItems.length === 0) {
+                event.preventDefault();
+                dialog.focus();
+                return;
+            }
+
+            var first = focusableItems[0];
+            var last = focusableItems[focusableItems.length - 1];
+
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        });
+
+        var initialFocus = dialog.querySelector('.btn-danger') || getFocusableItems()[0] || dialog;
+        initialFocus.focus();
+    })();
+</script>
+}

@@ -1,0 +1,204 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    meta.helm.sh/release-name: boldcommon
+    meta.helm.sh/release-namespace: bold-upgrade-center
+  creationTimestamp: "2026-09-23T07:11:44Z"
+  generation: 2
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  name: bold-common-ingressroute
+  namespace: bold-upgrade-center
+  resourceVersion: "1790158548165775004"
+  uid: 1a538d87-2e59-44f4-a16f-3303127b670d
+spec:
+  entryPoints:
+  - websecure
+  routes:
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: id-web-service
+      port: 6000
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/api`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: id-api-service
+      port: 6001
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/ums`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: id-ums-service
+      port: 6002
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/reporting/api`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: reports-api-service
+      port: 6551
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/reporting/jobs`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: reports-jobs-service
+      port: 6552
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/reporting/viewer`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: reports-viewer-service
+      port: 6554
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/reporting/reportservice`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: reports-reportservice-service
+      port: 6553
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/reporting`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: reports-web-service
+      port: 6550
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/bi/api`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: bi-api-service
+      port: 6005
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/bi/jobs`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: bi-jobs-service
+      port: 6006
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/bi/designer`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: bi-dataservice-service
+      port: 6007
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/bi`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: bi-web-service
+      port: 6004
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathPrefix(`/aiservice`)
+    middlewares:
+    - name: body-limit-200m
+    services:
+    - name: bold-ai-service
+      port: 6010
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  - kind: Rule
+    match: |
+      Host(`bold-upgrade-center.boldbidemo.com`) && PathRegexp(`^/etlservice(/|$)(.*)`)
+    middlewares:
+    - name: body-limit-200m
+    - name: etl-rewrite
+    services:
+    - name: bold-etl-service
+      port: 6009
+      serversTransport: long-timeouts-transport
+      sticky:
+        cookie:
+          maxAge: 600
+          name: bold.k8s.pod.id
+  tls:
+    secretName: bold-tls

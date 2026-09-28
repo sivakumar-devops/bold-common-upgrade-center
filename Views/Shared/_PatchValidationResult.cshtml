@@ -1,0 +1,64 @@
+@using Bold.UpgradeCenter.Models.ViewModels
+@model PatchValidationViewModel
+
+@if (Model.IsValid)
+{
+    <div class="validation-result valid">
+        Custom patch images are valid for version <strong>@Model.ParsedVersion</strong>.
+    </div>
+}
+else
+{
+    <div class="validation-result invalid">
+        @Model.ErrorMessage
+    </div>
+}
+
+@if (Model.Images.Count > 0)
+{
+    <div class="patch-image-results">
+        <div class="patch-image-results__summary">
+            Generated @Model.Images.Count deployment image@(Model.Images.Count == 1 ? string.Empty : "s")
+            @if (!string.IsNullOrWhiteSpace(Model.ImageRepository))
+            {
+                <span>using repository <code>@Model.ImageRepository</code></span>
+            }
+            else
+            {
+                <span>from the currently running deployment repositories</span>
+            }
+        </div>
+        <div class="patch-image-results__table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Deployment</th>
+                        <th>Target image</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var image in Model.Images)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@image.DeploymentName</strong>
+                                @if (!string.IsNullOrWhiteSpace(image.ContainerName))
+                                {
+                                    <div class="muted-small">@image.ContainerName</div>
+                                }
+                            </td>
+                            <td><code>@image.Image</code></td>
+                            <td>
+                                <span class="badge @(image.IsValid ? "badge-teal" : "badge-red")">
+                                    @(image.IsValid ? "Valid" : "Unavailable")
+                                </span>
+                                <div class="muted-small">@image.Message</div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}

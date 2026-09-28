@@ -1,0 +1,27 @@
+# .NET
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Configuration and secrets
+.env
+.env.*
+appsettings.Development.json
+secrets.json
+*.key
+*.pem
+*.pfx
+
+# Logs and temporary files
+logs/
+*.log
+TestResults/
+playwright-report/
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db

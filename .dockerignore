@@ -1,0 +1,11 @@
+bin/
+obj/
+node_modules/
+npm-debug.log
+test-results/
+playwright-report/
+App_Data/
+.vs/
+.vscode/
+Dockerfile
+.dockerignore

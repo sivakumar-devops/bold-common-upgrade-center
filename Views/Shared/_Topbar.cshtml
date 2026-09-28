@@ -1,0 +1,47 @@
+@using Bold.UpgradeCenter.Models
+@using Bold.UpgradeCenter.Services
+@model UpgradeCenterUser
+@inject IUpgradeCenterConfigurationProvider ConfigurationProvider
+@inject IUpgradeProductContext ProductContext
+
+@{
+    var runtimeConfiguration = await ConfigurationProvider.GetConfigurationAsync();
+    var productUrl = string.IsNullOrWhiteSpace(runtimeConfiguration.IdpBaseUrl)
+        ? Url.Action("Index", "UpgradeCenter")
+        : runtimeConfiguration.IdpBaseUrl;
+    var currentProduct = ProductContext.Current;
+    var email = string.IsNullOrWhiteSpace(Model.Email) ? string.Empty : Model.Email;
+}
+
+<div class="product-topbar">
+    <div class="brand">
+        <img class="brand-logo" src="~/upgrade-center/images/boldid_main_logo.svg" asp-append-version="true" alt="Bold" />
+        <div class="name">Bold</div>
+        <a class="crumb" href="@Url.Action("Index", "UpgradeCenter", new { product = currentProduct.Key })">Upgrade Center</a>
+        <span class="beta-badge beta-badge-topbar" aria-label="Beta version">BETA</span>
+    </div>
+    <div class="topbar-actions">
+        <a class="back-to-boldbi" href="@productUrl">Back to application</a>
+        <details class="user-menu">
+            <summary class="user-chip" aria-label="Open user menu">
+                <div class="avatar">@Model.Initials</div>
+                <span>@Model.DisplayName</span>
+            </summary>
+            <div class="user-menu-panel">
+                <div class="user-menu-title">Profile</div>
+                <div class="user-menu-header">
+                    <div class="avatar avatar-large">@Model.Initials</div>
+                    <div class="user-menu-identity">
+                        <strong>@Model.DisplayName</strong>
+                        @if (!string.IsNullOrWhiteSpace(email))
+                        {
+                            <span>@email</span>
+                        }
+                    </div>
+                </div>
+                <div class="user-menu-divider"></div>
+                <a class="user-menu-logout" href="@Url.Action("Logout", "UpgradeCenter")">Sign out</a>
+            </div>
+        </details>
+    </div>
+</div>
