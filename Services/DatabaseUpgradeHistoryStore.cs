@@ -172,6 +172,7 @@ public sealed class DatabaseUpgradeHistoryStore : IUpgradeHistoryStore
                 logger.LogInformation("Upgrade Center history table was updated with product tracking.");
             }
 
+            await NormalizeProductValuesAsync(master, cancellationToken);
             schemaReady = true;
         }
         finally
@@ -225,6 +226,53 @@ public sealed class DatabaseUpgradeHistoryStore : IUpgradeHistoryStore
             DatabaseType.Oracle => $"ALTER TABLE {TableName} ADD ({ProductColumnName} varchar2(64) NULL)",
             _ => throw new NotSupportedException($"Database type '{databaseType}' is not supported for upgrade history.")
         };
+    }
+
+    private async Task NormalizeProductValuesAsync(MasterHistoryConnection master, CancellationToken cancellationToken)
+    {
+        var updatedRows = 0;
+        updatedRows += await NormalizeProductValueAsync(
+            master,
+            UpgradeProductKeys.BoldBi,
+            ["bi", "boldbi", "bold-bi", "bold bi"],
+            cancellationToken);
+        updatedRows += await NormalizeProductValueAsync(
+            master,
+            UpgradeProductKeys.BoldReports,
+            ["reports", "boldreports", "bold-reports", "bold reports"],
+            cancellationToken);
+
+        if (updatedRows > 0)
+        {
+            logger.LogInformation(
+                "Upgrade Center history table product values were normalized. UpdatedRows: {UpdatedRows}.",
+                updatedRows);
+        }
+    }
+
+    private static async Task<int> NormalizeProductValueAsync(
+        MasterHistoryConnection master,
+        string normalizedProduct,
+        IReadOnlyList<string> legacyProducts,
+        CancellationToken cancellationToken)
+    {
+        var parameterNames = legacyProducts
+            .Select((_, index) => $"@legacyProduct{index}")
+            .ToArray();
+        var sql = $"""
+            UPDATE {TableName}
+            SET {ProductColumnName} = @normalizedProduct
+            WHERE lower({ProductColumnName}) IN ({string.Join(", ", parameterNames)})
+            """;
+
+        await using var command = CreateCommand(master, sql);
+        AddParameter(command, master.DatabaseType, "normalizedProduct", normalizedProduct);
+        for (var index = 0; index < legacyProducts.Count; index++)
+        {
+            AddParameter(command, master.DatabaseType, $"legacyProduct{index}", legacyProducts[index]);
+        }
+
+        return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static string CreateTableSql(DatabaseType databaseType)
@@ -405,7 +453,7 @@ public sealed class DatabaseUpgradeHistoryStore : IUpgradeHistoryStore
                 Id = ReadString(reader, "id") ?? string.Empty,
                 JobId = ReadString(reader, "jobid") ?? string.Empty,
                 ParentJobId = ReadString(reader, "parentjobid"),
-                Product = ReadString(reader, "product") ?? "BI",
+                Product = ReadString(reader, "product") ?? UpgradeProductKeys.BoldBi,
                 OperationType = ReadString(reader, "operationtype") ?? string.Empty,
                 PreviousVersion = ReadString(reader, "previousversion"),
                 TargetVersion = ReadString(reader, "targetversion"),

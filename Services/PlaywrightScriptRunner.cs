@@ -34,33 +34,33 @@ public sealed class PlaywrightScriptRunner : IPlaywrightScriptRunner
     public Task<PlaywrightScriptResult> ExecutePreUpgradeAsync(
         string upgradeJobId,
         Action<PlaywrightValidationProgress>? progress = null,
-        string? targetVersion = null,
+        string? runnerImageVersion = null,
         CancellationToken cancellationToken = default)
     {
         return options.UseKubernetesJob
-            ? kubernetesJobService.RunAsync(PlaywrightValidationMode.Pre, upgradeJobId, progress, targetVersion, cancellationToken)
+            ? kubernetesJobService.RunAsync(PlaywrightValidationMode.Pre, upgradeJobId, progress, runnerImageVersion, cancellationToken)
             : ExecuteProductHealthValidationAsync(PlaywrightValidationMode.Pre, progress, cancellationToken);
     }
 
     public Task<PlaywrightScriptResult> ExecutePostUpgradeAsync(
         string upgradeJobId,
         Action<PlaywrightValidationProgress>? progress = null,
-        string? targetVersion = null,
+        string? runnerImageVersion = null,
         CancellationToken cancellationToken = default)
     {
         return options.UseKubernetesJob
-            ? kubernetesJobService.RunAsync(PlaywrightValidationMode.Post, upgradeJobId, progress, targetVersion, cancellationToken)
+            ? kubernetesJobService.RunAsync(PlaywrightValidationMode.Post, upgradeJobId, progress, runnerImageVersion, cancellationToken)
             : ExecuteProductHealthValidationAsync(PlaywrightValidationMode.Post, progress, cancellationToken);
     }
 
     public Task<PlaywrightScriptResult> ExecuteCleanupAsync(
         string upgradeJobId,
         Action<PlaywrightValidationProgress>? progress = null,
-        string? targetVersion = null,
+        string? runnerImageVersion = null,
         CancellationToken cancellationToken = default)
     {
         return options.UseKubernetesJob
-            ? kubernetesJobService.RunCleanupAsync(upgradeJobId, progress, targetVersion, cancellationToken)
+            ? kubernetesJobService.RunCleanupAsync(upgradeJobId, progress, runnerImageVersion, cancellationToken)
             : ExecuteSkippedCleanupAsync(progress);
     }
 

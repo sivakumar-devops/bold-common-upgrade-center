@@ -9,19 +9,19 @@ public interface IPlaywrightScriptRunner
     Task<PlaywrightScriptResult> ExecutePreUpgradeAsync(
         string upgradeJobId,
         Action<PlaywrightValidationProgress>? progress = null,
-        string? targetVersion = null,
+        string? runnerImageVersion = null,
         CancellationToken cancellationToken = default);
 
     Task<PlaywrightScriptResult> ExecutePostUpgradeAsync(
         string upgradeJobId,
         Action<PlaywrightValidationProgress>? progress = null,
-        string? targetVersion = null,
+        string? runnerImageVersion = null,
         CancellationToken cancellationToken = default);
 
     Task<PlaywrightScriptResult> ExecuteCleanupAsync(
         string upgradeJobId,
         Action<PlaywrightValidationProgress>? progress = null,
-        string? targetVersion = null,
+        string? runnerImageVersion = null,
         CancellationToken cancellationToken = default);
 
     Task CleanupSharedStateAsync(string upgradeJobId, CancellationToken cancellationToken = default);

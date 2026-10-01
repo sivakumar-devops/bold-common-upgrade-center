@@ -91,7 +91,7 @@ builder.Services.AddScoped<IUpgradeUserContextProvider, UpgradeUserContextProvid
 builder.Services.AddScoped<IPlaywrightKubernetesJobService, PlaywrightKubernetesJobService>();
 builder.Services.AddScoped<IPlaywrightScriptRunner, PlaywrightScriptRunner>();
 builder.Services.AddSingleton<IPlaywrightReportStore, PlaywrightReportStore>();
-builder.Services.AddSingleton<IPlaywrightReportUploadTokenStore, InMemoryPlaywrightReportUploadTokenStore>();
+builder.Services.AddSingleton<IPlaywrightReportUploadTokenStore, DatabasePlaywrightReportUploadTokenStore>();
 builder.Services.AddSingleton<IPlaywrightValidationResultStore, InMemoryPlaywrightValidationResultStore>();
 builder.Services.AddSingleton<IUpgradeOperationalStateStore, DatabaseUpgradeOperationalStateStore>();
 builder.Services.AddSingleton<IUpgradeOperationLogStore, DatabaseUpgradeOperationLogStore>();

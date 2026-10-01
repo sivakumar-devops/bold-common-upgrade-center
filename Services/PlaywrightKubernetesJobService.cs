@@ -76,7 +76,7 @@ public sealed class PlaywrightKubernetesJobService : IPlaywrightKubernetesJobSer
         PlaywrightValidationMode mode,
         string upgradeJobId,
         Action<PlaywrightValidationProgress>? progress = null,
-        string? targetVersion = null,
+        string? runnerImageVersion = null,
         CancellationToken cancellationToken = default)
     {
         var startedAt = DateTimeOffset.UtcNow;
@@ -91,12 +91,12 @@ public sealed class PlaywrightKubernetesJobService : IPlaywrightKubernetesJobSer
             return CreateResult(false, null, false, startedAt, displayName, string.Empty, context.Message, context.Message);
         }
 
-        var runnerImage = await runnerImageProvider.GetRunnerImageAsync(targetVersion ?? string.Empty, cancellationToken);
+        var runnerImage = await runnerImageProvider.GetRunnerImageAsync(runnerImageVersion ?? string.Empty, cancellationToken);
         if (string.IsNullOrWhiteSpace(runnerImage))
         {
-            var message = string.IsNullOrWhiteSpace(targetVersion)
-                ? "Playwright runner image could not be resolved because the target version is not available."
-                : $"Playwright runner image is not available from release metadata for version {targetVersion}.";
+            var message = string.IsNullOrWhiteSpace(runnerImageVersion)
+                ? $"Playwright runner image could not be resolved because the {ToProgressLabel(mode)} image version is not available."
+                : $"Playwright runner image is not available from release metadata for {ToProgressLabel(mode)} version {runnerImageVersion}.";
             return CreateResult(false, null, false, startedAt, displayName, string.Empty, message, message);
         }
 
@@ -850,10 +850,10 @@ public sealed class PlaywrightKubernetesJobService : IPlaywrightKubernetesJobSer
     public Task<PlaywrightScriptResult> RunCleanupAsync(
         string upgradeJobId,
         Action<PlaywrightValidationProgress>? progress = null,
-        string? targetVersion = null,
+        string? runnerImageVersion = null,
         CancellationToken cancellationToken = default)
     {
-        return RunAsync(PlaywrightValidationMode.Cleanup, upgradeJobId, progress, targetVersion, cancellationToken);
+        return RunAsync(PlaywrightValidationMode.Cleanup, upgradeJobId, progress, runnerImageVersion, cancellationToken);
     }
 
     private static void AddOptional(IDictionary<string, string> values, string key, string? value)

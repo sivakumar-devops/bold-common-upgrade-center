@@ -6,13 +6,13 @@ public interface IPlaywrightKubernetesJobService
         PlaywrightValidationMode mode,
         string upgradeJobId,
         Action<PlaywrightValidationProgress>? progress = null,
-        string? targetVersion = null,
+        string? runnerImageVersion = null,
         CancellationToken cancellationToken = default);
 
     Task<PlaywrightScriptResult> RunCleanupAsync(
         string upgradeJobId,
         Action<PlaywrightValidationProgress>? progress = null,
-        string? targetVersion = null,
+        string? runnerImageVersion = null,
         CancellationToken cancellationToken = default);
 
     Task CleanupSharedStateAsync(string upgradeJobId, CancellationToken cancellationToken = default);

@@ -463,6 +463,7 @@ namespace Bold.UpgradeCenter.Controllers
             reportBuffer.Position = 0;
             if (!uploadAuthorization.Succeeded)
             {
+                LogPlaywrightUploadAuthorizationFailure(jobId, mode, PlaywrightUploadKind.Report, uploadAuthorization);
                 return ToUploadAuthorizationFailure(uploadAuthorization);
             }
 
@@ -521,6 +522,7 @@ namespace Bold.UpgradeCenter.Controllers
             resultBuffer.Position = 0;
             if (!uploadAuthorization.Succeeded)
             {
+                LogPlaywrightUploadAuthorizationFailure(jobId, mode, PlaywrightUploadKind.Result, uploadAuthorization);
                 return ToUploadAuthorizationFailure(uploadAuthorization);
             }
 
@@ -817,6 +819,21 @@ namespace Bold.UpgradeCenter.Controllers
             return message.Contains("different upload", StringComparison.OrdinalIgnoreCase)
                 ? Conflict(new { saved = false, error = message })
                 : Unauthorized(new { saved = false, error = message });
+        }
+
+        private void LogPlaywrightUploadAuthorizationFailure(
+            string jobId,
+            PlaywrightValidationMode mode,
+            PlaywrightUploadKind kind,
+            PlaywrightUploadAuthorization authorization)
+        {
+            var uploadKind = kind == PlaywrightUploadKind.Report ? "HTML report" : "result";
+            _operationLogStore.Append(
+                jobId,
+                ToPlaywrightStageDisplayName(mode),
+                "Warning",
+                "PlaywrightUpload",
+                $"Playwright {uploadKind} upload was rejected by Upgrade Center authorization. {authorization.FailureReason ?? "No additional reason was provided."}");
         }
 
         private void ApplyCompleteOperationLogs(UiUpgradeJob job)

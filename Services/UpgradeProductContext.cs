@@ -2,8 +2,8 @@ namespace Bold.UpgradeCenter.Services;
 
 public static class UpgradeProductKeys
 {
-    public const string BoldBi = "boldbi";
-    public const string BoldReports = "boldreports";
+    public const string BoldBi = "BI";
+    public const string BoldReports = "Reports";
 }
 
 public enum UpgradeProduct
@@ -136,10 +136,30 @@ public static class UpgradeProductDefinitions
             return BoldBi;
         }
 
+        var normalizedKey = NormalizeProductKey(productKey);
+        if (normalizedKey is "bi" or "boldbi")
+        {
+            return BoldBi;
+        }
+
+        if (normalizedKey is "reports" or "boldreports")
+        {
+            return BoldReports;
+        }
+
         return All.FirstOrDefault(product =>
             string.Equals(product.Key, productKey.Trim(), StringComparison.OrdinalIgnoreCase) ||
             string.Equals(product.DisplayName, productKey.Trim(), StringComparison.OrdinalIgnoreCase) ||
             string.Equals(product.ShortName, productKey.Trim(), StringComparison.OrdinalIgnoreCase))
             ?? BoldBi;
+    }
+
+    private static string NormalizeProductKey(string productKey)
+    {
+        return productKey
+            .Trim()
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .ToLowerInvariant();
     }
 }

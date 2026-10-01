@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 
 namespace Bold.UpgradeCenter.Services;
 
@@ -85,6 +86,8 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
             using var scope = scopeFactory.CreateScope();
             var product = scope.ServiceProvider.GetRequiredService<IUpgradeProductContext>().SetCurrent(job.ProductKey);
             var playwrightRunner = scope.ServiceProvider.GetRequiredService<IPlaywrightScriptRunner>();
+            var runnerImageProvider = scope.ServiceProvider.GetRequiredService<IPlaywrightRunnerImageProvider>();
+            var playwrightOptions = scope.ServiceProvider.GetRequiredService<IOptions<PlaywrightExecutionOptions>>().Value;
             var databaseBackupService = scope.ServiceProvider.GetRequiredService<IUpgradeDatabaseBackupService>();
             var kubernetesUpgradeService = scope.ServiceProvider.GetRequiredService<IKubernetesUpgradeService>();
             var rollbackStore = scope.ServiceProvider.GetRequiredService<IUpgradeRollbackStore>();
@@ -138,10 +141,25 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
             jobStore.MarkOperationRunning(jobId, UpgradeJobStageName.PreUpgradeValidation, "pre-validation-start", "Starting pre-upgrade validation.");
             jobStore.MarkOperationSucceeded(jobId, UpgradeJobStageName.PreUpgradeValidation, "pre-validation-start", "Pre-upgrade validation started.");
             jobStore.MarkOperationRunning(jobId, UpgradeJobStageName.PreUpgradeValidation, "pre-validation-tests", "Executing pre-upgrade validation.");
+            if (playwrightOptions.UseKubernetesJob && !isCustomPatch)
+            {
+                var targetRunnerImage = await runnerImageProvider.GetRunnerImageAsync(job.TargetVersion, cancellationToken);
+                if (string.IsNullOrWhiteSpace(targetRunnerImage))
+                {
+                    var message = $"Post-upgrade Playwright runner image is not available from release metadata for target version {job.TargetVersion}.";
+                    jobStore.MarkOperationFailed(jobId, UpgradeJobStageName.PreUpgradeValidation, "pre-validation-tests", message);
+                    jobStore.MarkStageFailed(jobId, UpgradeJobStageName.PreUpgradeValidation, message);
+                    await CleanupFailedNewBackupAsync(backupResult, databaseBackupService, cancellationToken);
+                    jobStore.Complete(jobId, UpgradeJobStatus.Failed, message);
+                    await UpdateHistoryCompletionAsync(historyStore, jobId, UpgradeJobStatus.Failed, false, null, UpgradeJobStageName.PreUpgradeValidation, message, cancellationToken);
+                    return;
+                }
+            }
+
             var preUpgradeResult = await playwrightRunner.ExecutePreUpgradeAsync(
                 jobId,
                 progress => UpdatePlaywrightProgress(jobId, UpgradeJobStageName.PreUpgradeValidation, progress),
-                targetVersion: job.TargetVersion,
+                runnerImageVersion: job.CurrentVersion,
                 cancellationToken: cancellationToken);
             if (!preUpgradeResult.Succeeded)
             {
@@ -153,7 +171,8 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
                         jobId,
                         playwrightRunner,
                         "Pre-upgrade validation failed. Running Playwright cleanup before stopping the upgrade.",
-                        CancellationToken.None);
+                        CancellationToken.None,
+                        runnerImageVersion: job.CurrentVersion);
                 }
                 else
                 {
@@ -266,7 +285,8 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
                         jobId,
                         playwrightRunner,
                         "Kubernetes image upgrade failed after pre-upgrade validation. Running Playwright cleanup before automatic rollback.",
-                        CancellationToken.None);
+                        CancellationToken.None,
+                        runnerImageVersion: job.TargetVersion);
                     await RunAutomaticRollbackAsync(
                         job,
                         backupResult,
@@ -332,7 +352,8 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
                     jobId,
                     playwrightRunner,
                     "Kubernetes image upgrade was skipped after pre-upgrade validation. Running Playwright cleanup before completing the job.",
-                    CancellationToken.None);
+                    CancellationToken.None,
+                    runnerImageVersion: job.CurrentVersion);
                 jobStore.MarkStageSkipped(jobId, UpgradeJobStageName.AutomaticRollback, "Automatic rollback was not required.");
                 jobStore.Complete(jobId, UpgradeJobStatus.Succeeded);
                 await UpdateHistoryCompletionAsync(historyStore, jobId, UpgradeJobStatus.Succeeded, rollbackEntry is not null, rollbackEntry?.Id, null, null, cancellationToken);
@@ -346,7 +367,7 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
             var postUpgradeResult = await playwrightRunner.ExecutePostUpgradeAsync(
                 jobId,
                 progress => UpdatePlaywrightProgress(jobId, UpgradeJobStageName.PostUpgradeValidation, progress),
-                targetVersion: job.TargetVersion,
+                runnerImageVersion: job.TargetVersion,
                 cancellationToken: cancellationToken);
             if (postUpgradeResult.Succeeded)
             {
@@ -357,7 +378,8 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
                     jobId,
                     playwrightRunner,
                     "Post-upgrade validation completed. Running Playwright cleanup before completing the upgrade.",
-                    CancellationToken.None);
+                    CancellationToken.None,
+                    runnerImageVersion: job.TargetVersion);
                 jobStore.MarkStageSkipped(jobId, UpgradeJobStageName.AutomaticRollback, "Automatic rollback was not required.");
                 jobStore.Complete(jobId, UpgradeJobStatus.Succeeded);
                 await UpdateHistoryCompletionAsync(historyStore, jobId, UpgradeJobStatus.Succeeded, rollbackEntry is not null, rollbackEntry?.Id, null, null, cancellationToken);
@@ -370,7 +392,8 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
                 jobId,
                 playwrightRunner,
                 "Post-upgrade validation failed. Running Playwright cleanup before automatic rollback.",
-                CancellationToken.None);
+                CancellationToken.None,
+                runnerImageVersion: job.TargetVersion);
             await RunAutomaticRollbackAsync(
                 job,
                 backupResult,
@@ -689,6 +712,7 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
             playwrightRunner,
             "Recovering Playwright cleanup after Upgrade Center restart.",
             CancellationToken.None,
+            runnerImageVersion: ResolveCleanupRunnerImageVersion(job),
             rerunIfAlreadyRunning: true);
 
         if (!jobStore.TryGet(job.Id, out var latestJob))
@@ -813,7 +837,7 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
         var postUpgradeResult = await playwrightRunner.ExecutePostUpgradeAsync(
             job.Id,
             progress => UpdatePlaywrightProgress(job.Id, UpgradeJobStageName.PostUpgradeValidation, progress),
-            targetVersion: job.TargetVersion,
+            runnerImageVersion: job.TargetVersion,
             cancellationToken: cancellationToken);
         if (postUpgradeResult.Succeeded)
         {
@@ -824,7 +848,8 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
                 job.Id,
                 playwrightRunner,
                 "Recovered post-upgrade validation completed. Running Playwright cleanup before completing the upgrade.",
-                CancellationToken.None);
+                CancellationToken.None,
+                runnerImageVersion: job.TargetVersion);
             jobStore.MarkStageSkipped(job.Id, UpgradeJobStageName.AutomaticRollback, "Automatic rollback was not required.");
             jobStore.Complete(job.Id, UpgradeJobStatus.Succeeded);
             await UpdateHistoryCompletionAsync(historyStore, job.Id, UpgradeJobStatus.Succeeded, true, rollbackEntry.Id, null, null, cancellationToken);
@@ -837,7 +862,8 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
             job.Id,
             playwrightRunner,
             "Recovered post-upgrade validation failed. Running Playwright cleanup before automatic rollback.",
-            CancellationToken.None);
+            CancellationToken.None,
+            runnerImageVersion: job.TargetVersion);
         await RunAutomaticRollbackAsync(
             job,
             backupResult,
@@ -1120,7 +1146,8 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
                         jobId,
                         playwrightRunner,
                         "Upgrade cancellation requested after Playwright validation started. Running Playwright cleanup.",
-                        CancellationToken.None);
+                        CancellationToken.None,
+                        runnerImageVersion: ResolveCleanupRunnerImageVersion(job));
                 }
 
                 rollbackEntry ??= ResolveRollbackEntry(job, rollbackStore);
@@ -1153,7 +1180,8 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
                     jobId,
                     playwrightRunner,
                     "Upgrade cancellation requested during pre-upgrade validation. Running Playwright cleanup.",
-                    CancellationToken.None);
+                    CancellationToken.None,
+                    runnerImageVersion: job.CurrentVersion);
                 if (backupResult is not null)
                 {
                     await CleanupFailedNewBackupAsync(backupResult, databaseBackupService, cancellationToken);
@@ -1183,11 +1211,30 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
         }
     }
 
+    private static string ResolveCleanupRunnerImageVersion(UpgradeJob job)
+    {
+        var kubernetesStage = job.Stages.FirstOrDefault(stage => stage.Name == UpgradeJobStageName.KubernetesImageUpgrade);
+        var postStage = job.Stages.FirstOrDefault(stage => stage.Name == UpgradeJobStageName.PostUpgradeValidation);
+
+        if (postStage?.Status is UpgradeJobStageStatus.Running or UpgradeJobStageStatus.Succeeded or UpgradeJobStageStatus.Failed)
+        {
+            return job.TargetVersion;
+        }
+
+        if (kubernetesStage?.Status is UpgradeJobStageStatus.Running or UpgradeJobStageStatus.Succeeded or UpgradeJobStageStatus.Failed)
+        {
+            return job.TargetVersion;
+        }
+
+        return job.CurrentVersion;
+    }
+
     private async Task<PlaywrightScriptResult?> RunCleanupJobAsync(
         string jobId,
         IPlaywrightScriptRunner playwrightRunner,
         string reason,
         CancellationToken cancellationToken,
+        string? runnerImageVersion = null,
         bool rerunIfAlreadyRunning = false)
     {
         if (!jobStore.TryGet(jobId, out var latestJob))
@@ -1220,7 +1267,7 @@ public sealed class UpgradeJobRunner : IUpgradeJobRunner
             var result = await playwrightRunner.ExecuteCleanupAsync(
                 jobId,
                 progress => UpdatePlaywrightProgress(jobId, UpgradeJobStageName.CleanupJob, progress),
-                targetVersion: latestJob.TargetVersion,
+                runnerImageVersion: runnerImageVersion ?? ResolveCleanupRunnerImageVersion(latestJob),
                 cancellationToken: cancellationToken);
 
             if (IsPlaywrightCleanupSkipped(result))
